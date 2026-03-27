@@ -22,7 +22,6 @@ from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass, field
 import torch
 from torch import Tensor
-from torch_npu.contrib import transfer_to_npu
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
