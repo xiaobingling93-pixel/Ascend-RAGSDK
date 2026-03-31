@@ -39,6 +39,7 @@ class TestSampleGenerator(unittest.TestCase):
         self.mock_config.retrieve_api_url = "http://example.com/retrieve"
         self.mock_config.num_threads = 4
         self.mock_config.max_path_length = 3
+        self.mock_config.retrieve_top_k = 3
         
         self.generator = SampleGenerator(self.mock_config)
 
@@ -51,6 +52,7 @@ class TestSampleGenerator(unittest.TestCase):
         self.assertEqual(self.generator.retrieve_api_url, "http://example.com/retrieve")
         self.assertEqual(self.generator.num_threads, 4)
         self.assertEqual(self.generator.max_path_length, 3)
+        self.assertEqual(self.generator.retrieve_top_k, 3)
 
     @patch('mx_rag.corag.sample_generator.get_generate_subquery_prompt')
     @patch('mx_rag.corag.sample_generator.get_generate_intermediate_answer_prompt')

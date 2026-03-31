@@ -45,6 +45,7 @@ class CoRagBaseConfig:
         judge_llm: 判断LLM实例，用于评估答案正确性（可选）。
         final_llm: 最终答案生成LLM实例（可选）。
         sub_answer_llm: 子答案生成LLM实例（可选）。
+        retrieve_top_k: 检索上下文数量，默认为5。
 
     """
     
@@ -58,6 +59,7 @@ class CoRagBaseConfig:
         final_llm: Optional[Text2TextLLM] = None,
         sub_answer_llm: Optional[Text2TextLLM] = None,
         judge_llm: Optional[Text2TextLLM] = None,
+        retrieve_top_k: int = 5,
     ):
         self.base_llm = base_llm
         self.retrieve_api_url = retrieve_api_url
@@ -66,3 +68,14 @@ class CoRagBaseConfig:
         self.final_llm = final_llm
         self.sub_answer_llm = sub_answer_llm
         self.judge_llm = judge_llm
+        self.retrieve_top_k = retrieve_top_k
+
+        if final_llm:
+            self.final_llm = final_llm
+        else:
+            self.final_llm = self.base_llm
+
+        if sub_answer_llm:
+            self.sub_answer_llm = sub_answer_llm
+        else:
+            self.sub_answer_llm = self.base_llm

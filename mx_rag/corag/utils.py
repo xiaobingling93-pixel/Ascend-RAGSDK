@@ -42,10 +42,31 @@ def _normalize_retrieve_api_results(results):
     return []
 
 
-def search_by_retrieve_api(query: str, url: str) -> List[Dict]:
+def truncate_long_text_by_char(text: str, max_token_length: int) -> str:
+    """
+    按字符数截断长文本，确保中文和英文的字符比例符合预期。
+    保留文本的开头和结尾部分，避免丢失重要信息。
+    Args:
+        text: 待截断的文本字符串
+        max_token_length: 允许的最大字符长度
+        
+    Returns:
+        截断后的文本字符串
+    """
+    if not text:
+        return text
+    chinese_ratio = sum(1 for c in text if '\u4e00' <= c <= '\u9fff') / len(text)
+    max_char_len = max_token_length if chinese_ratio > 0.5 else max_token_length * 2
+    if len(text) <= max_char_len:
+        return text
+    half_len = max_char_len // 2
+    with self.lock:
+        return text[:half_len] + text[- (max_char_len - half_len):]
+
+
+def search_by_retrieve_api(query: str, url: str, top_k: int = 5) -> List[Dict]:
     try:
-        # 设置超时时间为10秒，防止资源消耗攻击
-        response = requests.post(url, json={'query': query}, headers={"Content-Type": "application/json"}, timeout=10)
+        response = requests.post(url, json={'query': query, 'top_k': top_k}, headers={"Content-Type": "application/json"}, timeout=600)
         if response.status_code == 200:
             return _normalize_retrieve_api_results(response.json())
         else:

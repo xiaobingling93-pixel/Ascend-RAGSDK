@@ -29,7 +29,7 @@ from loguru import logger
 
 from mx_rag.corag.prompts import get_generate_intermediate_answer_prompt
 from mx_rag.corag.corag_agent import CoRagAgent
-from mx_rag.corag.utils import search_by_retrieve_api, normalize_text
+from mx_rag.corag.utils import search_by_retrieve_api, normalize_text, truncate_long_text_by_char
 from mx_rag.corag.utils import ThreadSafeCounter, check_answer, check_answer_with_llm_judge
 from mx_rag.corag.config import CoRagBaseConfig, DEFAULT_SAMPLE_TASK_DESC, DEFAULT_TASK_DESC
 from mx_rag.utils import file_check
@@ -57,6 +57,7 @@ class CoRagEvaluator:
         self.retrieve_api_url = config.retrieve_api_url
         self.num_threads = config.num_threads
         self.max_path_length = config.max_path_length
+        self.retrieve_top_k = config.retrieve_top_k
 
     def _create_agent(self) -> CoRagAgent:
         """为每个线程创建独立的 Agent 实例，避免线程安全问题。
@@ -69,6 +70,7 @@ class CoRagEvaluator:
             retrieve_api_url=self.retrieve_api_url,
             final_llm=self.final_llm,
             sub_answer_llm=self.sub_answer_llm,
+            retrieve_top_k=self.retrieve_top_k,
         )
 
     @staticmethod
@@ -195,7 +197,7 @@ class CoRagEvaluator:
         """
         naive_docs = []
         try:
-            retriever_results = search_by_retrieve_api(query=query, url=self.retrieve_api_url)
+            retriever_results = search_by_retrieve_api(query=query, url=self.retrieve_api_url, top_k=num_contexts)
             for res in retriever_results:
                 if isinstance(res, str):
                     naive_docs.append(res)
@@ -209,7 +211,8 @@ class CoRagEvaluator:
     
     def _generate_naive_prediction(self, question: str, naive_docs: List[str]) -> str:
         prompt = get_generate_intermediate_answer_prompt(question, naive_docs)
-        prediction = self.base_llm.chat(prompt)
+        prompt = truncate_long_text_by_char(prompt, max_token_length=self.final_llm.llm_config.max_tokens)
+        prediction = self.final_llm.chat(prompt)
         return prediction.strip()
     
     def _select_documents_for_recall(self, documents: List[List[str]], num_contexts: int) -> List[str]:

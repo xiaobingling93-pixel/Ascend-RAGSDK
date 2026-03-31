@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 from mx_rag.corag.evaluator import CoRagEvaluator
 from mx_rag.corag.config import CoRagBaseConfig
 from mx_rag.llm.text2text import Text2TextLLM
+from mx_rag.llm.llm_parameter import LLMParameterConfig
 
 
 class TestCoRagEvaluator(unittest.TestCase):
@@ -32,24 +33,26 @@ class TestCoRagEvaluator(unittest.TestCase):
         self.mock_base_llm = MagicMock(spec=Text2TextLLM)
         self.mock_config = MagicMock(spec=CoRagBaseConfig)
         self.mock_config.base_llm = self.mock_base_llm
-        self.mock_config.final_llm = None
+        self.mock_config.final_llm = self.mock_base_llm
         self.mock_config.judge_llm = None
-        self.mock_config.sub_answer_llm = None
+        self.mock_config.sub_answer_llm = self.mock_base_llm
         self.mock_config.retrieve_api_url = "http://example.com/retrieve"
         self.mock_config.num_threads = 4
         self.mock_config.max_path_length = 3
+        self.mock_config.retrieve_top_k = 3
         
         self.evaluator = CoRagEvaluator(self.mock_config)
 
     def test_init(self):
         """Test CoRagEvaluator initialization."""
         self.assertEqual(self.evaluator.base_llm, self.mock_base_llm)
-        self.assertEqual(self.evaluator.final_llm, None)
+        self.assertEqual(self.evaluator.final_llm, self.mock_base_llm)
         self.assertEqual(self.evaluator.judge_llm, None)
-        self.assertEqual(self.evaluator.sub_answer_llm, None)
+        self.assertEqual(self.evaluator.sub_answer_llm, self.mock_base_llm)
         self.assertEqual(self.evaluator.retrieve_api_url, "http://example.com/retrieve")
         self.assertEqual(self.evaluator.num_threads, 4)
         self.assertEqual(self.evaluator.max_path_length, 3)
+        self.assertEqual(self.evaluator.retrieve_top_k, 3)
 
     def test_unicode_escape_to_char(self):
         """Test unicode escape to character conversion."""
@@ -189,6 +192,7 @@ class TestCoRagEvaluator(unittest.TestCase):
         """Test naive prediction generation."""
         mock_get_prompt.return_value = "test prompt"
         self.mock_base_llm.chat.return_value = "Paris"
+        self.mock_base_llm.llm_config = LLMParameterConfig()
         
         prediction = self.evaluator._generate_naive_prediction(
             "What is the capital of France?",
