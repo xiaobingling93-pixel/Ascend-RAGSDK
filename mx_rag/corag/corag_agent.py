@@ -24,7 +24,7 @@ from typing import Optional, List, Tuple
 from dataclasses import dataclass, field
 
 from mx_rag.llm.text2text import Text2TextLLM
-from mx_rag.corag.utils import search_by_retrieve_api
+from mx_rag.corag.utils import search_by_retrieve_api, truncate_long_text_by_char
 from mx_rag.corag.prompts import (
     get_generate_subquery_prompt, 
     get_generate_intermediate_answer_prompt, 
@@ -76,48 +76,38 @@ class CoRagAgent:
 
     def __init__(
             self, base_llm: Text2TextLLM,
-            retrieve_api_url: Optional[str] = None,
+            retrieve_api_url: str,
             final_llm: Optional[Text2TextLLM] = None,
-            sub_answer_llm: Optional[Text2TextLLM] = None
+            sub_answer_llm: Optional[Text2TextLLM] = None,
+            retrieve_top_k: int = 5
     ):
         self.base_llm = base_llm
         self.final_llm = final_llm
         self.sub_answer_llm = sub_answer_llm
         self.retrieve_api_url = retrieve_api_url
+        self.retrieve_top_k = retrieve_top_k
 
         self.lock = threading.Lock()
 
     def sample_path(
             self, query: str, task_desc: str,
-            max_path_length: int = 3,
-            **kwargs
+            max_path_length: int = 3
     ) -> ReasoningPath:
         """
         生成CoRAG推理路径，通过迭代生成子查询，收集子答案和相关文档，构建完整的推理过程。
         通过控制LLM调用次数和子查询数量，确保生成的路径在合理范围内。
         """
         # Initialize or use provided interaction history
-        interaction_queries: List[str] = kwargs.pop('subqueries', [])
-        interaction_answers: List[str] = kwargs.pop('subanswers', [])
-        retrieved_doc_ids: List[List[str]] = kwargs.pop('document_ids', [])
-        retrieved_docs: List[List[str]] = kwargs.pop('documents', [])
-        thought_process: List[str] = kwargs.pop('reasoning_steps', [])
-        
-        # Validate input data consistency
-        if len(interaction_queries) != len(interaction_answers) or len(interaction_queries) != len(retrieved_doc_ids):
-            raise ValueError(
-                "Interaction history components (queries, answers, document IDs) "
-                "must have matching lengths"
-            )
-        if retrieved_docs and len(retrieved_docs) != len(retrieved_doc_ids):
-            raise ValueError("Retrieved documents and document IDs must have matching lengths")
-        if thought_process and len(thought_process) != len(interaction_queries):
-            raise ValueError("Reasoning steps and interaction queries must have matching lengths")
-
+        interaction_queries: List[str] = []
+        interaction_answers: List[str] = []
+        retrieved_doc_ids: List[List[str]] = []
+        retrieved_docs: List[List[str]] = []
+        thought_process: List[str] = []
+    
         # Configure LLM parameters and call limits
         original_temp = self.base_llm.llm_config.temperature
         llm_call_count = 0
-        max_allowed_calls = 4 * (max_path_length - len(interaction_queries))
+        max_allowed_calls = 4 * max_path_length
         
         # Generate additional subqueries until reaching max path length or call limit
         while len(interaction_queries) < max_path_length and llm_call_count < max_allowed_calls:
@@ -132,7 +122,7 @@ class CoRagAgent:
             )
             
             # Ensure prompt fits within token limits
-            self._truncate_long_text_by_char(followup_prompt, max_token_length=self.base_llm.llm_config.max_tokens)
+            followup_prompt = truncate_long_text_by_char(followup_prompt, max_token_length=self.base_llm.llm_config.max_tokens)
             
             # Generate and process subquery
             generated_subquery = self.base_llm.chat(query=followup_prompt)
@@ -172,8 +162,7 @@ class CoRagAgent:
         return complete_path
 
     def generate_final_answer(
-            self, rag_path: ReasoningPath, task_description: str,
-            reference_documents: Optional[List[str]] = None
+            self, rag_path: ReasoningPath, task_description: str
     ) -> str:
         """
         基于完整的推理路径生成最终答案。
@@ -184,7 +173,6 @@ class CoRagAgent:
         Args:
             rag_path: 包含查询和推理历史的 ReasoningPath 对象
             task_description: 任务的详细描述
-            reference_documents: 可选的额外参考文档列表
             
         Returns:
             生成的最终答案字符串
@@ -195,31 +183,18 @@ class CoRagAgent:
             interaction_queries=rag_path.subqueries or [],
             interaction_answers=rag_path.subanswers or [],
             task_instructions=task_description,
-            reference_docs=reference_documents,
+            reference_docs=rag_path.documents or [],
         )
 
         # Determine which LLM to use for final answer generation
         answer_llm = self.final_llm if self.final_llm is not None else self.base_llm
         
         # Ensure the prompt fits within the token limits of the selected LLM
-        self._truncate_long_text_by_char(final_prompt, max_token_length=answer_llm.llm_config.max_tokens)
+        final_prompt = truncate_long_text_by_char(final_prompt, max_token_length=answer_llm.llm_config.max_tokens)
         
         # Generate and return the final comprehensive answer
         return answer_llm.chat(query=final_prompt)
 
-    def _truncate_long_text_by_char(self, text: str, max_token_length: int) -> str:
-        # 适配中英文：中文占比高则1:1，英文高则字符上限翻倍
-        if not text:
-            return text
-        chinese_ratio = sum(1 for c in text if '\u4e00' <= c <= '\u9fff') / len(text)
-        max_char_len = max_token_length if chinese_ratio > 0.5 else max_token_length * 2
-
-        if len(text) <= max_char_len:
-            return text
-
-        half_len = max_char_len // 2
-        with self.lock:
-            return text[:half_len] + text[- (max_char_len - half_len):]
 
     def _get_subanswer_and_doc_ids(
             self, subquery: str
@@ -229,7 +204,7 @@ class CoRagAgent:
         documents = []
         doc_ids = []
         if self.retrieve_api_url:
-            retriever_results = search_by_retrieve_api(query=subquery, url=self.retrieve_api_url)
+            retriever_results = search_by_retrieve_api(query=subquery, url=self.retrieve_api_url, top_k=self.retrieve_top_k)
             for res in retriever_results:
                 if isinstance(res, str):
                     documents.append(res)
@@ -238,12 +213,11 @@ class CoRagAgent:
                     content = res.get('contents') or res.get('content') or res.get('text') or str(res)
                     documents.append(content)
                     doc_ids.append(str(res.get('id') or res.get('doc_id') or 'graph_chunk'))
-            documents = documents[::-1]
         prompt = get_generate_intermediate_answer_prompt(
             subquery=subquery,
             documents=documents,
         )
         client = self.sub_answer_llm if self.sub_answer_llm else self.base_llm
-        prompt = self._truncate_long_text_by_char(prompt, max_token_length=client.llm_config.max_tokens)
+        prompt = truncate_long_text_by_char(prompt, max_token_length=client.llm_config.max_tokens)
         subanswer: str = client.chat(query=prompt)
         return subanswer, doc_ids, documents

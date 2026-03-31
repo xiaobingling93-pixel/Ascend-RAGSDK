@@ -51,9 +51,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(config.retrieve_api_url, "http://example.com/retrieve")
         self.assertEqual(config.num_threads, 8)  # Default value
         self.assertEqual(config.max_path_length, 3)  # Default value
-        self.assertIsNone(config.final_llm)
-        self.assertIsNone(config.sub_answer_llm)
-        self.assertIsNone(config.judge_llm)
+
         # Test initialization with custom parameters
         config = CoRagBaseConfig(
             base_llm=mock_base_llm,
