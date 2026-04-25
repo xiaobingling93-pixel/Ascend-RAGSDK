@@ -23,6 +23,7 @@ from unittest.mock import MagicMock
 
 from mx_rag.corag.config import CoRagBaseConfig, DEFAULT_TASK_DESC, DEFAULT_SAMPLE_TASK_DESC
 from mx_rag.llm.text2text import Text2TextLLM
+from mx_rag.utils import ClientParam
 
 
 class TestConfig(unittest.TestCase):
@@ -46,13 +47,15 @@ class TestConfig(unittest.TestCase):
             base_llm=mock_base_llm,
             retrieve_api_url="http://example.com/retrieve"
         )
-        
+
         self.assertEqual(config.base_llm, mock_base_llm)
         self.assertEqual(config.retrieve_api_url, "http://example.com/retrieve")
         self.assertEqual(config.num_threads, 8)  # Default value
         self.assertEqual(config.max_path_length, 3)  # Default value
+        self.assertIsInstance(config.client_param, ClientParam)
 
         # Test initialization with custom parameters
+        mock_client_param = ClientParam(use_http=True)
         config = CoRagBaseConfig(
             base_llm=mock_base_llm,
             retrieve_api_url="http://example.com/retrieve",
@@ -60,7 +63,8 @@ class TestConfig(unittest.TestCase):
             max_path_length=5,
             final_llm=mock_final_llm,
             sub_answer_llm=mock_sub_answer_llm,
-            judge_llm=mock_judge_llm
+            judge_llm=mock_judge_llm,
+            client_param=mock_client_param
         )
         self.assertEqual(config.base_llm, mock_base_llm)
         self.assertEqual(config.retrieve_api_url, "http://example.com/retrieve")
@@ -69,6 +73,7 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(config.final_llm, mock_final_llm)
         self.assertEqual(config.sub_answer_llm, mock_sub_answer_llm)
         self.assertEqual(config.judge_llm, mock_judge_llm)
+        self.assertEqual(config.client_param, mock_client_param)
 
 
 if __name__ == '__main__':

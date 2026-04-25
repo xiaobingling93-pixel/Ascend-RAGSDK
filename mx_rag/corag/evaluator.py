@@ -29,11 +29,12 @@ from loguru import logger
 
 from mx_rag.corag.prompts import get_generate_intermediate_answer_prompt
 from mx_rag.corag.corag_agent import CoRagAgent
-from mx_rag.corag.utils import search_by_retrieve_api, normalize_text, truncate_long_text_by_char
+from mx_rag.corag.utils import normalize_retrieve_api_results, normalize_text, truncate_long_text_by_char
 from mx_rag.corag.utils import ThreadSafeCounter, check_answer, check_answer_with_llm_judge
 from mx_rag.corag.config import CoRagBaseConfig, DEFAULT_SAMPLE_TASK_DESC, DEFAULT_TASK_DESC
 from mx_rag.utils import file_check
 from mx_rag.utils.common import MAX_FILE_SIZE
+from mx_rag.utils.url import RequestUtils
 
 
 class CoRagEvaluator:
@@ -58,6 +59,11 @@ class CoRagEvaluator:
         self.num_threads = config.num_threads
         self.max_path_length = config.max_path_length
         self.retrieve_top_k = config.retrieve_top_k
+        self.client_param = config.client_param
+
+    @property
+    def _client(self):
+        return RequestUtils(client_param=self.client_param)
 
     def _create_agent(self) -> CoRagAgent:
         """为每个线程创建独立的 Agent 实例，避免线程安全问题。
@@ -71,16 +77,19 @@ class CoRagEvaluator:
             final_llm=self.final_llm,
             sub_answer_llm=self.sub_answer_llm,
             retrieve_top_k=self.retrieve_top_k,
+            client_param=self.client_param
         )
 
     @staticmethod
-    def _unicode_escape_to_char(s: str) -> str:
-        """将含 Unicode 转义的字符串还原为原始字符"""
-        try:
-            return s.encode('utf-8').decode('unicode_escape')
-        except (UnicodeEncodeError, UnicodeDecodeError, AttributeError):
-            # 如果转换失败，返回原始字符串
-            return s
+    def _safe_unicode_decode(s: str) -> str:
+        if "\\u" in s or "\\x" in s:
+            try:
+                return s.encode("utf-8").decode("unicode_escape")
+            except UnicodeDecodeError:
+                return s
+            except Exception:
+                return s
+        return s
 
     def _check_hit(self, retrieved_docs: List[str], golden_facts: List[str]) -> Tuple[int, int]:
         """计算基于"Soft Inclusion"原则的命中次数。
@@ -100,7 +109,7 @@ class CoRagEvaluator:
             return 0, 0
 
         norm_gold = [normalize_text(g) for g in golden_facts]
-        norm_retr = [normalize_text(self._unicode_escape_to_char(r)) for r in retrieved_docs]
+        norm_retr = [normalize_text(self._safe_unicode_decode(r)) for r in retrieved_docs]
 
         hits = 0
         for g in norm_gold:
@@ -196,16 +205,24 @@ class CoRagEvaluator:
             检索到的文档列表。
         """
         naive_docs = []
-        try:
-            retriever_results = search_by_retrieve_api(query=query, url=self.retrieve_api_url, top_k=num_contexts)
-            for res in retriever_results:
-                if isinstance(res, str):
-                    naive_docs.append(res)
-                elif isinstance(res, dict):
-                    content = res.get('contents') or res.get('content') or res.get('text') or str(res)
-                    naive_docs.append(content)
-        except Exception as e:
-            logger.warning(f"Naive retrieval failed: {e}")
+
+        request_body = {
+            "query": query,
+            "top_k": num_contexts
+        }
+        request_body["stream"] = False
+        response = self._client.post(url=self.retrieve_api_url, body=json.dumps(request_body),
+                                     headers={"Content-Type": "application/json"})
+        if response.success:
+            try:
+                data = json.loads(response.data)
+                naive_docs = normalize_retrieve_api_results(data)
+            except json.JSONDecodeError as e:
+                logger.error(f"response content cannot convert to json format: {e}")
+                naive_docs = []
+            except Exception as e:
+                logger.error(f"unexpected error while parsing JSON response. Error: {e}")
+                naive_docs = []
 
         return naive_docs[:num_contexts]
     

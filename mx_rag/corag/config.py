@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details.
 from typing import Optional
 from mx_rag.llm.text2text import Text2TextLLM
 from mx_rag.utils.common import validate_params, MAX_URL_LENGTH
+from mx_rag.utils import ClientParam
 
 # Constants
 DEFAULT_TASK_DESC = (
@@ -60,6 +61,7 @@ class CoRagBaseConfig:
         sub_answer_llm: Optional[Text2TextLLM] = None,
         judge_llm: Optional[Text2TextLLM] = None,
         retrieve_top_k: int = 5,
+        client_param: ClientParam = ClientParam()
     ):
         self.base_llm = base_llm
         self.retrieve_api_url = retrieve_api_url
@@ -69,6 +71,7 @@ class CoRagBaseConfig:
         self.sub_answer_llm = sub_answer_llm
         self.judge_llm = judge_llm
         self.retrieve_top_k = retrieve_top_k
+        self.client_param = client_param
 
         if final_llm:
             self.final_llm = final_llm

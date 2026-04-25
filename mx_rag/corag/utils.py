@@ -29,7 +29,7 @@ from mx_rag.corag.prompts import get_evaluate_answer_prompt
 from mx_rag.llm.text2text import Text2TextLLM
 
 
-def _normalize_retrieve_api_results(results):
+def normalize_retrieve_api_results(results):
     """Normalize retrieve API responses into a list for downstream consumers."""
     if isinstance(results, dict):
         for key in ['chunks', 'data', 'results', 'docs', 'passages']:
@@ -61,19 +61,6 @@ def truncate_long_text_by_char(text: str, max_token_length: int) -> str:
         return text
     half_len = max_char_len // 2
     return text[:half_len] + text[- (max_char_len - half_len):]
-
-
-def search_by_retrieve_api(query: str, url: str, top_k: int = 5) -> List[Dict]:
-    try:
-        response = requests.post(url, json={'query': query, 'top_k': top_k}, headers={"Content-Type": "application/json"}, timeout=600)
-        if response.status_code == 200:
-            return _normalize_retrieve_api_results(response.json())
-        else:
-            logger.error(f"Failed to get a response from retrieve API. Status code: {response.status_code}")
-            return []
-    except requests.RequestException as e:
-        logger.error(f"Error calling retrieve API: {type(e).__name__}: Connection error occurred")
-        return []
 
 
 def normalize_text(text: str) -> str:

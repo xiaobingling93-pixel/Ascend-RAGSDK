@@ -25,6 +25,7 @@ from mx_rag.corag.sample_generator import SampleGenerator
 from mx_rag.corag.config import CoRagBaseConfig
 from mx_rag.corag.corag_agent import ReasoningPath
 from mx_rag.llm.text2text import Text2TextLLM
+from mx_rag.utils import ClientParam
 
 
 class TestSampleGenerator(unittest.TestCase):
@@ -40,7 +41,8 @@ class TestSampleGenerator(unittest.TestCase):
         self.mock_config.num_threads = 4
         self.mock_config.max_path_length = 3
         self.mock_config.retrieve_top_k = 3
-        
+        self.mock_config.client_param = ClientParam()
+
         self.generator = SampleGenerator(self.mock_config)
 
     def test_init(self):
@@ -53,6 +55,7 @@ class TestSampleGenerator(unittest.TestCase):
         self.assertEqual(self.generator.num_threads, 4)
         self.assertEqual(self.generator.max_path_length, 3)
         self.assertEqual(self.generator.retrieve_top_k, 3)
+        self.assertIsInstance(self.generator.client_param, ClientParam)
 
     @patch('mx_rag.corag.sample_generator.get_generate_subquery_prompt')
     @patch('mx_rag.corag.sample_generator.get_generate_intermediate_answer_prompt')
