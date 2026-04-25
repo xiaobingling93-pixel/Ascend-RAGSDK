@@ -20,11 +20,14 @@ See the Mulan PSL v2 for more details.
 
 import re
 import threading
+import json
 from typing import Optional, List, Tuple
 from dataclasses import dataclass, field
 
 from mx_rag.llm.text2text import Text2TextLLM
-from mx_rag.corag.utils import search_by_retrieve_api, truncate_long_text_by_char
+from mx_rag.corag.utils import normalize_retrieve_api_results, truncate_long_text_by_char
+from mx_rag.utils.url import RequestUtils
+from mx_rag.utils import ClientParam
 from mx_rag.corag.prompts import (
     get_generate_subquery_prompt, 
     get_generate_intermediate_answer_prompt, 
@@ -79,13 +82,17 @@ class CoRagAgent:
             retrieve_api_url: str,
             final_llm: Optional[Text2TextLLM] = None,
             sub_answer_llm: Optional[Text2TextLLM] = None,
-            retrieve_top_k: int = 5
+            retrieve_top_k: int = 5,
+            client_param: ClientParam = ClientParam()
     ):
         self.base_llm = base_llm
         self.final_llm = final_llm
         self.sub_answer_llm = sub_answer_llm
         self.retrieve_api_url = retrieve_api_url
         self.retrieve_top_k = retrieve_top_k
+        self.client_param=client_param
+
+        self._client = RequestUtils(client_param=self.client_param)
 
         self.lock = threading.Lock()
 
@@ -204,7 +211,24 @@ class CoRagAgent:
         documents = []
         doc_ids = []
         if self.retrieve_api_url:
-            retriever_results = search_by_retrieve_api(query=subquery, url=self.retrieve_api_url, top_k=self.retrieve_top_k)
+            request_body = {
+                "query": subquery,
+                "top_k": self.retrieve_top_k
+            }
+            request_body["stream"] = False
+            response = self._client.post(url=self.retrieve_api_url, body=json.dumps(request_body),
+                                         headers={"Content-Type": "application/json"})
+            if response.success:
+                try:
+                    data = json.loads(response.data)    
+                    retriever_results = normalize_retrieve_api_results(data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"response content cannot convert to json format: {e}")
+                    retriever_results = []
+                except Exception as e:
+                    logger.error(f"unexpected error while parsing JSON response. Error: {e}")
+                    retriever_results = []
+
             for res in retriever_results:
                 if isinstance(res, str):
                     documents.append(res)

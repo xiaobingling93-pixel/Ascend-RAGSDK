@@ -59,6 +59,7 @@ class SampleGenerator:
         self.num_threads = config.num_threads
         self.max_path_length = config.max_path_length
         self.retrieve_top_k = config.retrieve_top_k
+        self.client_param = config.client_param
 
     def _create_agent(self) -> CoRagAgent:
         """为每个线程创建独立的 Agent 实例，避免线程安全问题。
@@ -72,6 +73,7 @@ class SampleGenerator:
             final_llm=self.final_llm,
             sub_answer_llm=self.sub_answer_llm,
             retrieve_top_k=self.retrieve_top_k,
+            client_param=self.client_param
         )
 
     @staticmethod

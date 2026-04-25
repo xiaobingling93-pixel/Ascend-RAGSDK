@@ -22,11 +22,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from mx_rag.corag.utils import (
-    _normalize_retrieve_api_results,
+    normalize_retrieve_api_results,
     normalize_text,
     check_answer,
     check_answer_with_llm_judge,
-    ThreadSafeCounter
+    ThreadSafeCounter,
+    truncate_long_text_by_char
 )
 from mx_rag.llm.text2text import Text2TextLLM
 
@@ -36,27 +37,27 @@ class TestUtils(unittest.TestCase):
         """Test graph API results normalization."""
         # Test with dict containing 'chunks' key
         self.assertEqual(
-            _normalize_retrieve_api_results({'chunks': [1, 2, 3]}),
+            normalize_retrieve_api_results({'chunks': [1, 2, 3]}),
             [1, 2, 3]
         )
         
         # Test with dict containing other keys
         self.assertEqual(
-            _normalize_retrieve_api_results({'data': ['a', 'b']}),
+            normalize_retrieve_api_results({'data': ['a', 'b']}),
             ['a', 'b']
         )
         
         # Test with empty dict
-        self.assertEqual(_normalize_retrieve_api_results({}), [])
+        self.assertEqual(normalize_retrieve_api_results({}), [])
         
         # Test with list
         self.assertEqual(
-            _normalize_retrieve_api_results([{'key': 'value'}]),
+            normalize_retrieve_api_results([{'key': 'value'}]),
             [{'key': 'value'}]
         )
         
         # Test with non-dict, non-list
-        self.assertEqual(_normalize_retrieve_api_results("string"), [])
+        self.assertEqual(normalize_retrieve_api_results("string"), [])
 
     def test_normalize_text(self):
         """Test text normalization function."""
@@ -137,14 +138,36 @@ class TestUtils(unittest.TestCase):
     def test_thread_safe_counter(self):
         """Test thread-safe counter class."""
         counter = ThreadSafeCounter(initial_value=5)
-        
+
         # Test increment
         self.assertEqual(counter.increment(), 6)
         self.assertEqual(counter.increment(3), 9)
-        
+
         # Test reset
         self.assertEqual(counter.reset(), 0)
         self.assertEqual(counter.increment(), 1)
+
+    def test_truncate_long_text_by_char(self):
+        """Test text truncation function."""
+        # Test with short text (no truncation needed)
+        short_text = "Short text"
+        self.assertEqual(truncate_long_text_by_char(short_text, 100), short_text)
+
+        # Test with long English text
+        long_text = "a" * 200
+        result = truncate_long_text_by_char(long_text, 50)
+        self.assertEqual(len(result), 100)  # English text * 2
+
+        # Test with long Chinese text
+        long_chinese = "中" * 200
+        result = truncate_long_text_by_char(long_chinese, 50)
+        self.assertEqual(len(result), 50)  # Chinese text * 1
+
+        # Test with empty text
+        self.assertEqual(truncate_long_text_by_char("", 50), "")
+
+        # Test with None
+        self.assertEqual(truncate_long_text_by_char(None, 50), None)
 
 
 if __name__ == '__main__':

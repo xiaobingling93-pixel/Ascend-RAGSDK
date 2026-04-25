@@ -25,6 +25,7 @@ from mx_rag.corag.evaluator import CoRagEvaluator
 from mx_rag.corag.config import CoRagBaseConfig
 from mx_rag.llm.text2text import Text2TextLLM
 from mx_rag.llm.llm_parameter import LLMParameterConfig
+from mx_rag.utils import ClientParam
 
 
 class TestCoRagEvaluator(unittest.TestCase):
@@ -40,7 +41,8 @@ class TestCoRagEvaluator(unittest.TestCase):
         self.mock_config.num_threads = 4
         self.mock_config.max_path_length = 3
         self.mock_config.retrieve_top_k = 3
-        
+        self.mock_config.client_param = ClientParam()
+
         self.evaluator = CoRagEvaluator(self.mock_config)
 
     def test_init(self):
@@ -53,17 +55,18 @@ class TestCoRagEvaluator(unittest.TestCase):
         self.assertEqual(self.evaluator.num_threads, 4)
         self.assertEqual(self.evaluator.max_path_length, 3)
         self.assertEqual(self.evaluator.retrieve_top_k, 3)
+        self.assertIsInstance(self.evaluator.client_param, ClientParam)
 
-    def test_unicode_escape_to_char(self):
+    def test_safe_unicode_decode(self):
         """Test unicode escape to character conversion."""
         self.assertEqual(
-            CoRagEvaluator._unicode_escape_to_char('\\u4e2d\\u6587'),
+            CoRagEvaluator._safe_unicode_decode('\\u4e2d\\u6587'),
             '中文')
         self.assertEqual(
-            CoRagEvaluator._unicode_escape_to_char('Hello\\u0020World'),
+            CoRagEvaluator._safe_unicode_decode('Hello\\u0020World'),
             'Hello World')
         self.assertEqual(
-            CoRagEvaluator._unicode_escape_to_char('Normal text'),
+            CoRagEvaluator._safe_unicode_decode('Normal text'),
             'Normal text')
 
     def test_split_sentences(self):
@@ -165,26 +168,35 @@ class TestCoRagEvaluator(unittest.TestCase):
             ["Paris is the capital of France.", "Berlin is the capital of Germany."]
         )
 
-    @patch('mx_rag.corag.evaluator.search_by_retrieve_api')
-    def test_naive_retrieve(self, mock_search):
+    @patch('mx_rag.corag.evaluator.RequestUtils')
+    def test_naive_retrieve(self, mock_request_utils_class):
         """Test naive retrieval functionality."""
-        # Mock search results
-        mock_search.return_value = [
-            {"text": "Paris is the capital of France."},
-            {"content": "France is a country in Europe."},
-            {"contents": "Europe is a continent."},
-            "Direct string result"
-        ]
-        
-        results = self.evaluator._naive_retrieve("What is the capital of France?", 3)
+        # Mock RequestUtils and response
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.data = '[{"text": "Paris is the capital of France."}, {"content": "France is a country in Europe."}, {"contents": "Europe is a continent."}, "Direct string result"]'
+        mock_client.post.return_value = mock_response
+        mock_request_utils_class.return_value = mock_client
+
+        # Create a new evaluator with the mocked client
+        evaluator = CoRagEvaluator(self.mock_config)
+
+        results = evaluator._naive_retrieve("What is the capital of France?", 3)
         self.assertEqual(len(results), 3)
-        self.assertIn("Paris is the capital of France.", results)
-        self.assertIn("France is a country in Europe.", results)
-        self.assertIn("Europe is a continent.", results)
-        
-        # Test exception handling
-        mock_search.side_effect = Exception("Search error")
-        results = self.evaluator._naive_retrieve("What is the capital of France?", 3)
+        # normalize_retrieve_api_results returns the raw list
+        self.assertEqual(results[0], {"text": "Paris is the capital of France."})
+        self.assertEqual(results[1], {"content": "France is a country in Europe."})
+        self.assertEqual(results[2], {"contents": "Europe is a continent."})
+
+        # Test exception handling - JSON decode error
+        mock_response.data = 'invalid json'
+        results = evaluator._naive_retrieve("What is the capital of France?", 3)
+        self.assertEqual(results, [])
+
+        # Test exception handling - request failure
+        mock_response.success = False
+        results = evaluator._naive_retrieve("What is the capital of France?", 3)
         self.assertEqual(results, [])
 
     @patch('mx_rag.corag.evaluator.get_generate_intermediate_answer_prompt')
